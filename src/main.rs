@@ -1,11 +1,21 @@
 use std::{cell, collections::HashSet};
 
 use macroquad::{color::Color, prelude::*};
-use tetrs::{process_logic, FallingTetramino, GameState, InputEvent, PlayfieldSize};
+use tetrs::{process_logic, GameState, InputEvent, MovingTetramino, PlacedBlocks, PlayfieldSize};
 
-fn draw_current_tetramino(cur_tetramino: &FallingTetramino, grid: &SquareBitGridDrawer) {
+fn draw_current_tetramino(cur_tetramino: &MovingTetramino, grid_painter: &SquareBitGridPainter) {
     for block in &cur_tetramino.shape.blocks {
-        grid.draw_grid_cell(block.coordinates.row + cur_tetramino.offset.y_offset, block.coordinates.col + cur_tetramino.offset.x_offset, block.color);
+        grid_painter.draw_grid_cell(
+            block.coordinates.row + cur_tetramino.offset.row_offset,
+            block.coordinates.col + cur_tetramino.offset.col_offset,
+            block.color,
+        );
+    }
+}
+
+fn draw_placed_blocks(placed: &PlacedBlocks, grid_painter: &SquareBitGridPainter) {
+    for block in placed.get_blocks() {
+        grid_painter.draw_grid_cell(block.coordinates.row, block.coordinates.col, block.color);
     }
 }
 
@@ -19,7 +29,7 @@ struct GridSize {
     cols: isize,
 }
 
-struct SquareBitGridDrawer {
+struct SquareBitGridPainter {
     grid_size: GridSize,
     deactivated_color: Color,
     origin: Coordinate,
@@ -27,7 +37,7 @@ struct SquareBitGridDrawer {
     grid_spacing: f32,
 }
 
-impl SquareBitGridDrawer {
+impl SquareBitGridPainter {
     fn new(
         size: GridSize,
         default_color: Color,
@@ -35,7 +45,7 @@ impl SquareBitGridDrawer {
         cell_size: f32,
         cells_spacing: f32,
     ) -> Self {
-        SquareBitGridDrawer {
+        SquareBitGridPainter {
             grid_size: size,
             deactivated_color: default_color,
             origin: position_origin,
@@ -80,11 +90,20 @@ impl SquareBitGridDrawer {
     }
 }
 
-
 fn draw_game_frame(game_state: &GameState) {
-    let game_grid_drawer = SquareBitGridDrawer::new(GridSize { rows: game_state.playfield_size.rows, cols: game_state.playfield_size.cols },GRAY, Coordinate { x: 50., y: 50. }, 10.0, 5.0);
-    game_grid_drawer.draw_empty_grid();
-    draw_current_tetramino(&game_state.current_tetramino, &game_grid_drawer);
+    let game_grid_painter = SquareBitGridPainter::new(
+        GridSize {
+            rows: game_state.playfield_size.rows,
+            cols: game_state.playfield_size.cols,
+        },
+        GRAY,
+        Coordinate { x: 50., y: 50. },
+        10.0,
+        5.0,
+    );
+    game_grid_painter.draw_empty_grid();
+    draw_placed_blocks(&game_state.placed_blocks, &game_grid_painter);
+    draw_current_tetramino(&game_state.current_tetramino, &game_grid_painter);
 }
 
 #[macroquad::main("MyGame")]
