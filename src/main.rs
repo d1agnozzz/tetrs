@@ -6,8 +6,8 @@ use tetrs::{process_logic, GameState, InputEvent, MovingTetramino, PlacedBlocks,
 fn draw_current_tetramino(cur_tetramino: &MovingTetramino, grid_painter: &SquareBitGridPainter) {
     for block in &cur_tetramino.shape.blocks {
         grid_painter.draw_grid_cell(
-            block.coordinates.row + cur_tetramino.offset.row_offset,
-            block.coordinates.col + cur_tetramino.offset.col_offset,
+            block.coordinates.row + cur_tetramino.offset.row,
+            block.coordinates.col + cur_tetramino.offset.col,
             block.color,
         );
     }

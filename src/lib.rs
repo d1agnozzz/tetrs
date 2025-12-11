@@ -24,27 +24,27 @@ pub struct InputEvent {
     pub keys: HashSet<KeyCode>,
 }
 
-#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
-pub struct BlockCoordinates {
-    pub row: isize,
-    pub col: isize,
-}
-
-impl Add<[isize; 2]> for BlockCoordinates {
-    type Output = BlockCoordinates;
-
-    fn add(self, rhs: [isize; 2]) -> Self::Output {
-        BlockCoordinates {
-            row: self.row + rhs[0],
-            col: self.col + rhs[1],
-        }
-    }
-}
+// #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
+// pub struct BlockCoordinates {
+//     pub row: isize,
+//     pub col: isize,
+// }
+//
+// impl Add<[isize; 2]> for BlockCoordinates {
+//     type Output = BlockCoordinates;
+//
+//     fn add(self, rhs: [isize; 2]) -> Self::Output {
+//         BlockCoordinates {
+//             row: self.row + rhs[0],
+//             col: self.col + rhs[1],
+//         }
+//     }
+// }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Block {
     pub color: Color,
-    pub coordinates: BlockCoordinates,
+    pub coordinates: Coordinates,
 }
 
 impl PartialEq for Block {
@@ -102,50 +102,64 @@ impl From<Bounds> for BoundingBox {
     }
 }
 
-#[derive(Default, Clone, Copy)]
-pub struct OffsetPosition {
-    pub col_offset: isize,
-    pub row_offset: isize,
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Coordinates {
+    pub row: isize,
+    pub col: isize,
 }
 
-impl OffsetPosition {
+impl Coordinates {
+    fn new(row: isize, col: isize) -> Coordinates {
+        Coordinates { row: row, col: col }
+    }
     fn clamp_inplace(&mut self, min_row: isize, max_row: isize, min_col: isize, max_col: isize) {
-        self.row_offset = self.row_offset.clamp(min_row, max_row);
-        self.col_offset = self.col_offset.clamp(min_col, max_col);
+        self.row = self.row.clamp(min_row, max_row);
+        self.col = self.col.clamp(min_col, max_col);
     }
 }
 
-impl AddAssign for OffsetPosition {
+impl Add<Coordinates> for Coordinates {
+    type Output = Coordinates;
+
+    fn add(self, rhs: Coordinates) -> Self::Output {
+        Coordinates {
+            row: self.row + rhs.row,
+            col: self.col + rhs.row,
+        }
+    }
+}
+
+impl AddAssign for Coordinates {
     fn add_assign(&mut self, rhs: Self) {
-        self.col_offset += rhs.col_offset;
-        self.row_offset += rhs.row_offset;
+        self.col += rhs.col;
+        self.row += rhs.row;
     }
 }
 
-impl RemAssign<PlayfieldSize> for OffsetPosition {
+impl RemAssign<PlayfieldSize> for Coordinates {
     fn rem_assign(&mut self, rhs: PlayfieldSize) {
-        self.col_offset %= rhs.cols;
-        self.row_offset %= rhs.rows;
+        self.col %= rhs.cols;
+        self.row %= rhs.rows;
     }
 }
 
-impl SubAssign<BoundingBox> for OffsetPosition {
+impl SubAssign<BoundingBox> for Coordinates {
     fn sub_assign(&mut self, rhs: BoundingBox) {
-        self.col_offset -= rhs.height;
-        self.row_offset -= rhs.width;
+        self.col -= rhs.height;
+        self.row -= rhs.width;
     }
 }
 
 pub struct MovingTetramino {
     pub shape: TetraminoShape,
-    pub offset: OffsetPosition,
+    pub offset: Coordinates,
 }
 
 impl MovingTetramino {
     fn new(shape: TetraminoShape) -> MovingTetramino {
         MovingTetramino {
             shape: shape,
-            offset: OffsetPosition::default(),
+            offset: Coordinates::default(),
         }
     }
 
@@ -154,11 +168,11 @@ impl MovingTetramino {
             .blocks
             .iter()
             .map(|b| {
-                let offset_row = b.coordinates.row + self.offset.row_offset;
-                let offset_col = b.coordinates.col + self.offset.col_offset;
+                let offset_row = b.coordinates.row + self.offset.row;
+                let offset_col = b.coordinates.col + self.offset.col;
                 Block {
                     color: b.color,
-                    coordinates: BlockCoordinates {
+                    coordinates: Coordinates {
                         row: offset_row,
                         col: offset_col,
                     },
@@ -216,11 +230,16 @@ enum CollisionType {
     Terminal,
     NonTerminal,
 }
+enum CollisionDirection {
+    Down,
+    Left,
+    Right,
+}
 impl GameState {
-    pub fn get_playfield_top_center(playfield_size: PlayfieldSize) -> OffsetPosition {
-        OffsetPosition {
-            col_offset: playfield_size.cols / 2,
-            row_offset: 0,
+    pub fn get_playfield_top_center(playfield_size: PlayfieldSize) -> Coordinates {
+        Coordinates {
+            col: playfield_size.cols / 2,
+            row: 0,
         }
     }
     pub fn new(playfield_size: PlayfieldSize) -> GameState {
@@ -238,9 +257,9 @@ impl GameState {
         }
     }
     pub fn reset_tetramino_offset(&mut self) {
-        self.current_tetramino.offset = OffsetPosition {
-            col_offset: self.playfield_size.cols / 2,
-            row_offset: self.playfield_size.rows / 2,
+        self.current_tetramino.offset = Coordinates {
+            col: self.playfield_size.cols / 2,
+            row: self.playfield_size.rows / 2,
         }
     }
     pub fn next_turn(&mut self) {
@@ -252,16 +271,21 @@ impl GameState {
     }
     pub fn check_collision(&mut self) -> Option<CollisionType> {
         let mut moving_blocks = &self.current_tetramino.get_blocks_with_offset();
-        let mut stationary_blocks = &self.placed_blocks.storage;
-        let arrangements = [[-1, 0], [1, 0], [0, 1], [0, -1]];
+        let mut stationary_blocks = self.placed_blocks.get_blocks();
+
+        let directions = [
+            Coordinates::new(1, 0),
+            Coordinates::new(0, 1),
+            Coordinates::new(0, -1),
+        ];
 
         for block in moving_blocks {
-            for arrangement in arrangements {
-                let neighbour_coords = block.coordinates + arrangement;
-                if stationary_blocks.contains(&Block {
-                    color: RED,
-                    coordinates: neighbour_coords,
-                }) || neighbour_coords.col < 0
+            for direction in directions {
+                let neighbour_coords = block.coordinates + direction;
+                if stationary_blocks
+                    .iter()
+                    .any(|b| b.coordinates == neighbour_coords)
+                    || neighbour_coords.col < 0
                     || neighbour_coords.row < 0
                     || neighbour_coords.col > self.playfield_size.cols - 1
                     || neighbour_coords.row > self.playfield_size.rows - 1
@@ -269,9 +293,9 @@ impl GameState {
                     dbg!(moving_blocks);
                     dbg!(stationary_blocks);
                     dbg!(block);
-                    dbg!(arrangement);
+                    dbg!(direction);
                     dbg!(neighbour_coords);
-                    if arrangement == [1, 0] {
+                    if direction == [1, 0] {
                         return Some(CollisionType::Terminal);
                     } else {
                         return Some(CollisionType::NonTerminal);
@@ -287,11 +311,8 @@ impl GameState {
             .put_blocks(&self.current_tetramino.get_blocks_with_offset());
     }
 
-    pub fn push_cur_tetramino(&mut self) {
-        self.current_tetramino.offset += OffsetPosition {
-            row_offset: 1,
-            col_offset: 0,
-        };
+    pub fn translate_cur_tetramino(&mut self, offset: Coordinates) {
+        self.current_tetramino.offset += offset;
 
         let bounding_box = self.current_tetramino.shape.get_bounding_box();
         let max_row = self.playfield_size.rows - bounding_box.height - 1;
@@ -341,19 +362,32 @@ impl TimerMs {
 }
 
 pub fn process_logic(game_state: &mut GameState, input: InputEvent) {
+    if input.keys.contains(&KeyCode::A) {
+        game_state.translate_cur_tetramino(Coordinates { row: 0, col: -1 });
+    }
+    if input.keys.contains(&KeyCode::D) {
+        game_state.translate_cur_tetramino(Coordinates { row: 0, col: 1 });
+    }
+
+    game_state.descend_delay.update();
     match game_state.check_collision() {
         Some(CollisionType::Terminal) => {
             game_state.place_current_tetramino();
             game_state.next_turn();
         }
         Some(CollisionType::NonTerminal) => {
-            game_state.push_cur_tetramino();
-            println!("Non-terminal collision");
+            if game_state.descend_delay.is_out() {
+                game_state.translate_cur_tetramino(Coordinates { row: 1, col: 0 });
+                println!("Non-terminal collision");
+                game_state.descend_delay.reset();
+            }
         }
         None => {
-            game_state.push_cur_tetramino();
+            if game_state.descend_delay.is_out() {
+                game_state.translate_cur_tetramino(Coordinates { row: 1, col: 0 });
+                game_state.descend_delay.reset();
+            }
             println!("No collision");
         }
     }
-    std::thread::sleep(Duration::from_millis(100));
 }
