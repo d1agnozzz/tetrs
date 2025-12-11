@@ -1,7 +1,7 @@
 use std::{cell, collections::HashSet};
 
 use macroquad::{color::Color, prelude::*};
-use tetrs::{process_logic, FallingTetramino, GameState, InputEvent};
+use tetrs::{process_logic, FallingTetramino, GameState, InputEvent, PlayfieldSize};
 
 fn draw_current_tetramino(cur_tetramino: &FallingTetramino, grid: &SquareBitGridDrawer) {
     for block in &cur_tetramino.shape.blocks {
@@ -89,7 +89,7 @@ fn draw_game_frame(game_state: &GameState) {
 
 #[macroquad::main("MyGame")]
 async fn main() {
-    let mut game_state = GameState::new();
+    let mut game_state = GameState::new(PlayfieldSize { rows: 20, cols: 10 });
     let mut frame_counter = 0;
     let mut input_buf = HashSet::<KeyCode>::new();
     let mut time_start = std::time::Instant::now();
@@ -100,16 +100,10 @@ async fn main() {
         };
 
         process_logic(&mut game_state, inputs);
-
-        println!("Entered UI loop!");
         clear_background(BLACK);
-
         draw_game_frame(&game_state);
-
         draw_fps();
         frame_counter += 1;
-
-        println!("Drew a frame!");
         next_frame().await;
     }
 }
