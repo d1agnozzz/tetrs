@@ -6,7 +6,7 @@ use rand::{
     Rng,
 };
 
-use crate::{Block, BlockCoordinates, BoundingBox, Bounds};
+use crate::{Block, BoundingBox, Bounds, Coordinates};
 
 #[derive(Clone, Copy)]
 pub enum TetraminoKind {
@@ -42,19 +42,19 @@ impl TetraminoShape {
             blocks: {
                 vec![
                     Block {
-                        coordinates: BlockCoordinates { row: 0, col: 0 },
+                        coordinates: Coordinates { row: 0, col: 0 },
                         color: BLUE,
                     },
                     Block {
-                        coordinates: BlockCoordinates { row: 1, col: 0 },
+                        coordinates: Coordinates { row: 1, col: 0 },
                         color: BLUE,
                     },
                     Block {
-                        coordinates: BlockCoordinates { row: 2, col: 0 },
+                        coordinates: Coordinates { row: 2, col: 0 },
                         color: BLUE,
                     },
                     Block {
-                        coordinates: BlockCoordinates { row: 3, col: 0 },
+                        coordinates: Coordinates { row: 3, col: 0 },
                         color: BLUE,
                     },
                 ]
@@ -69,19 +69,19 @@ impl TetraminoShape {
             blocks: {
                 vec![
                     Block {
-                        coordinates: BlockCoordinates { row: 0, col: 0 },
+                        coordinates: Coordinates { row: 0, col: 0 },
                         color: ORANGE,
                     },
                     Block {
-                        coordinates: BlockCoordinates { row: 1, col: 0 },
+                        coordinates: Coordinates { row: 1, col: 0 },
                         color: ORANGE,
                     },
                     Block {
-                        coordinates: BlockCoordinates { row: 2, col: 0 },
+                        coordinates: Coordinates { row: 2, col: 0 },
                         color: ORANGE,
                     },
                     Block {
-                        coordinates: BlockCoordinates { row: 2, col: 1 },
+                        coordinates: Coordinates { row: 2, col: 1 },
                         color: ORANGE,
                     },
                 ]
@@ -96,19 +96,19 @@ impl TetraminoShape {
             blocks: {
                 vec![
                     Block {
-                        coordinates: BlockCoordinates { row: 0, col: 1 },
+                        coordinates: Coordinates { row: 0, col: 1 },
                         color: DARKBLUE,
                     },
                     Block {
-                        coordinates: BlockCoordinates { row: 1, col: 1 },
+                        coordinates: Coordinates { row: 1, col: 1 },
                         color: DARKBLUE,
                     },
                     Block {
-                        coordinates: BlockCoordinates { row: 2, col: 1 },
+                        coordinates: Coordinates { row: 2, col: 1 },
                         color: DARKBLUE,
                     },
                     Block {
-                        coordinates: BlockCoordinates { row: 2, col: 0 },
+                        coordinates: Coordinates { row: 2, col: 0 },
                         color: DARKBLUE,
                     },
                 ]
@@ -123,19 +123,19 @@ impl TetraminoShape {
             blocks: {
                 vec![
                     Block {
-                        coordinates: BlockCoordinates { row: 0, col: 2 },
+                        coordinates: Coordinates { row: 0, col: 2 },
                         color: GREEN,
                     },
                     Block {
-                        coordinates: BlockCoordinates { row: 0, col: 1 },
+                        coordinates: Coordinates { row: 0, col: 1 },
                         color: GREEN,
                     },
                     Block {
-                        coordinates: BlockCoordinates { row: 1, col: 1 },
+                        coordinates: Coordinates { row: 1, col: 1 },
                         color: GREEN,
                     },
                     Block {
-                        coordinates: BlockCoordinates { row: 1, col: 0 },
+                        coordinates: Coordinates { row: 1, col: 0 },
                         color: GREEN,
                     },
                 ]
@@ -150,19 +150,19 @@ impl TetraminoShape {
             blocks: {
                 vec![
                     Block {
-                        coordinates: BlockCoordinates { row: 0, col: 0 },
+                        coordinates: Coordinates { row: 0, col: 0 },
                         color: RED,
                     },
                     Block {
-                        coordinates: BlockCoordinates { row: 0, col: 1 },
+                        coordinates: Coordinates { row: 0, col: 1 },
                         color: RED,
                     },
                     Block {
-                        coordinates: BlockCoordinates { row: 1, col: 1 },
+                        coordinates: Coordinates { row: 1, col: 1 },
                         color: RED,
                     },
                     Block {
-                        coordinates: BlockCoordinates { row: 1, col: 2 },
+                        coordinates: Coordinates { row: 1, col: 2 },
                         color: RED,
                     },
                 ]
@@ -176,19 +176,19 @@ impl TetraminoShape {
             blocks: {
                 vec![
                     Block {
-                        coordinates: BlockCoordinates { row: 0, col: 0 },
+                        coordinates: Coordinates { row: 0, col: 0 },
                         color: PURPLE,
                     },
                     Block {
-                        coordinates: BlockCoordinates { row: 0, col: 1 },
+                        coordinates: Coordinates { row: 0, col: 1 },
                         color: PURPLE,
                     },
                     Block {
-                        coordinates: BlockCoordinates { row: 0, col: 2 },
+                        coordinates: Coordinates { row: 0, col: 2 },
                         color: PURPLE,
                     },
                     Block {
-                        coordinates: BlockCoordinates { row: 1, col: 1 },
+                        coordinates: Coordinates { row: 1, col: 1 },
                         color: PURPLE,
                     },
                 ]
@@ -203,19 +203,19 @@ impl TetraminoShape {
             blocks: {
                 vec![
                     Block {
-                        coordinates: BlockCoordinates { row: 0, col: 0 },
+                        coordinates: Coordinates { row: 0, col: 0 },
                         color: YELLOW,
                     },
                     Block {
-                        coordinates: BlockCoordinates { row: 0, col: 1 },
+                        coordinates: Coordinates { row: 0, col: 1 },
                         color: YELLOW,
                     },
                     Block {
-                        coordinates: BlockCoordinates { row: 1, col: 0 },
+                        coordinates: Coordinates { row: 1, col: 0 },
                         color: YELLOW,
                     },
                     Block {
-                        coordinates: BlockCoordinates { row: 1, col: 1 },
+                        coordinates: Coordinates { row: 1, col: 1 },
                         color: YELLOW,
                     },
                 ]

@@ -1,20 +1,23 @@
 use std::{
     collections::HashSet,
     hash::Hash,
-    ops::{Add, AddAssign, RemAssign, Sub, SubAssign},
-    u8,
+    ops::{Add, AddAssign, BitAnd, RemAssign, Sub, SubAssign},
+    time::Instant,
+    u8, usize,
 };
 
 use macroquad::{
     color::{Color, BLUE, DARKBLUE, GREEN, ORANGE, RED},
     input::KeyCode,
-    miniquad::TextureKind,
+    miniquad::{native::linux_x11::libx11::Time, TextureKind},
 };
 use rand::{
     distr::{Distribution, StandardUniform},
     Rng,
 };
 use std::time::Duration;
+use strum::IntoEnumIterator;
+use strum_macros::EnumIter;
 
 use crate::tetramino_shape::{TetraminoKind, TetraminoShape};
 
@@ -23,23 +26,6 @@ mod tetramino_shape;
 pub struct InputEvent {
     pub keys: HashSet<KeyCode>,
 }
-
-// #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
-// pub struct BlockCoordinates {
-//     pub row: isize,
-//     pub col: isize,
-// }
-//
-// impl Add<[isize; 2]> for BlockCoordinates {
-//     type Output = BlockCoordinates;
-//
-//     fn add(self, rhs: [isize; 2]) -> Self::Output {
-//         BlockCoordinates {
-//             row: self.row + rhs[0],
-//             col: self.col + rhs[1],
-//         }
-//     }
-// }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Block {
@@ -116,6 +102,9 @@ impl Coordinates {
         self.row = self.row.clamp(min_row, max_row);
         self.col = self.col.clamp(min_col, max_col);
     }
+    fn is_inbound(&self, rows: isize, cols: isize) -> bool {
+        self.row < rows && self.row >= 0 && self.col < cols && self.col >= 0
+    }
 }
 
 impl Add<Coordinates> for Coordinates {
@@ -124,7 +113,7 @@ impl Add<Coordinates> for Coordinates {
     fn add(self, rhs: Coordinates) -> Self::Output {
         Coordinates {
             row: self.row + rhs.row,
-            col: self.col + rhs.row,
+            col: self.col + rhs.col,
         }
     }
 }
@@ -210,7 +199,9 @@ pub struct GameState {
     pub placed_blocks: PlacedBlocks,
     pub current_tetramino: MovingTetramino,
     pub next_tetramino: TetraminoKind,
-    pub descend_delay: TimerMs,
+    pub descend_delay_timer: TimerMs,
+    pub place_delay_ms: usize,
+    pub collision_state: CollisionState,
     pub column_toggling: isize,
     pub row_toggleing: isize,
 }
@@ -230,11 +221,50 @@ enum CollisionType {
     Terminal,
     NonTerminal,
 }
+#[derive(EnumIter, Debug, PartialEq)]
 enum CollisionDirection {
     Down,
     Left,
     Right,
 }
+
+impl CollisionDirection {
+    pub fn offset(&self) -> Coordinates {
+        match self {
+            CollisionDirection::Down => Coordinates::new(1, 0),
+            CollisionDirection::Left => Coordinates::new(0, -1),
+            CollisionDirection::Right => Coordinates::new(0, 1),
+        }
+    }
+}
+#[derive(Debug)]
+struct CollisionResult {
+    down: bool,
+    left: bool,
+    right: bool,
+}
+
+impl CollisionResult {
+    pub fn new() -> CollisionResult {
+        CollisionResult {
+            down: false,
+            left: false,
+            right: false,
+        }
+    }
+}
+enum CollisionState {
+    Idle,
+    Delaying { timer: TimerMs },
+    Reacting,
+}
+
+impl CollisionState {
+    fn new() -> Self {
+        CollisionState::Idle
+    }
+}
+
 impl GameState {
     pub fn get_playfield_top_center(playfield_size: PlayfieldSize) -> Coordinates {
         Coordinates {
@@ -249,7 +279,9 @@ impl GameState {
         GameState {
             playfield_size: playfield_size,
             placed_blocks: Default::default(),
-            descend_delay: TimerMs::new(1000),
+            descend_delay_timer: TimerMs::new(200),
+            place_delay_ms: 1000,
+            collision_state: CollisionState::Idle,
             current_tetramino: first_tetramino,
             next_tetramino: rand::random(),
             column_toggling: 5,
@@ -269,41 +301,34 @@ impl GameState {
         self.current_tetramino = next_tetramino;
         self.next_tetramino = rand::random();
     }
-    pub fn check_collision(&mut self) -> Option<CollisionType> {
-        let mut moving_blocks = &self.current_tetramino.get_blocks_with_offset();
-        let mut stationary_blocks = self.placed_blocks.get_blocks();
-
-        let directions = [
-            Coordinates::new(1, 0),
-            Coordinates::new(0, 1),
-            Coordinates::new(0, -1),
-        ];
+    pub fn check_collision(&mut self) -> CollisionResult {
+        let moving_blocks = &self.current_tetramino.get_blocks_with_offset();
+        let stationary_blocks = self.placed_blocks.get_blocks();
+        let mut collision_result = CollisionResult::new();
 
         for block in moving_blocks {
-            for direction in directions {
-                let neighbour_coords = block.coordinates + direction;
+            for direction in CollisionDirection::iter() {
+                let neighbour_coords = block.coordinates + direction.offset();
                 if stationary_blocks
                     .iter()
                     .any(|b| b.coordinates == neighbour_coords)
-                    || neighbour_coords.col < 0
-                    || neighbour_coords.row < 0
-                    || neighbour_coords.col > self.playfield_size.cols - 1
-                    || neighbour_coords.row > self.playfield_size.rows - 1
+                    || !neighbour_coords
+                        .is_inbound(self.playfield_size.rows, self.playfield_size.cols)
                 {
+                    match direction {
+                        CollisionDirection::Down => collision_result.down = true,
+                        CollisionDirection::Left => collision_result.left = true,
+                        CollisionDirection::Right => collision_result.right = true,
+                    }
                     dbg!(moving_blocks);
                     dbg!(stationary_blocks);
                     dbg!(block);
                     dbg!(direction);
                     dbg!(neighbour_coords);
-                    if direction == [1, 0] {
-                        return Some(CollisionType::Terminal);
-                    } else {
-                        return Some(CollisionType::NonTerminal);
-                    }
                 }
             }
         }
-        return None;
+        return collision_result;
     }
 
     pub fn place_current_tetramino(&mut self) {
@@ -326,68 +351,66 @@ impl GameState {
 
 #[derive(Clone, Copy)]
 pub struct TimerMs {
-    time_start: std::time::Instant,
-    elapsed: i64,
-    wait: i64,
+    deadline: Instant,
+    wait_ms: usize,
 }
 
 impl TimerMs {
-    pub fn new(wait: i64) -> Self {
+    pub fn new(wait_ms: usize) -> Self {
         Self {
-            time_start: std::time::Instant::now(),
-            elapsed: 0,
-            wait: wait,
+            deadline: Instant::now() + Duration::from_millis(wait_ms as u64),
+            wait_ms: wait_ms,
+        }
+    }
+    pub fn reset(&self) -> Self {
+        Self {
+            deadline: Instant::now() + Duration::from_millis(self.wait_ms as u64),
+            wait_ms: self.wait_ms,
         }
     }
     pub fn update(&mut self) -> bool {
-        self.elapsed += self.time_start.elapsed().as_millis() as i64;
-        self.is_out()
-    }
-    pub fn is_out(&self) -> bool {
-        self.wait <= (self.elapsed)
-    }
-    pub fn reset(&mut self) {
-        while self.is_out() {
-            self.elapsed -= self.wait;
+        if self.deadline <= std::time::Instant::now() {
+            *self = Self::new(self.wait_ms);
+            true
+        } else {
+            false
         }
-        self.time_start = std::time::Instant::now();
-        // self.elapsed = 0;
-    }
-    pub fn elapsed(&self) -> i64 {
-        self.elapsed
-    }
-    pub fn time_left(&self) -> i64 {
-        self.wait - self.elapsed
     }
 }
 
 pub fn process_logic(game_state: &mut GameState, input: InputEvent) {
-    if input.keys.contains(&KeyCode::A) {
+    let collision = game_state.check_collision();
+    if input.keys.contains(&KeyCode::A) && !collision.left {
         game_state.translate_cur_tetramino(Coordinates { row: 0, col: -1 });
     }
-    if input.keys.contains(&KeyCode::D) {
+    if input.keys.contains(&KeyCode::D) && !collision.right {
         game_state.translate_cur_tetramino(Coordinates { row: 0, col: 1 });
     }
 
-    game_state.descend_delay.update();
-    match game_state.check_collision() {
-        Some(CollisionType::Terminal) => {
-            game_state.place_current_tetramino();
-            game_state.next_turn();
-        }
-        Some(CollisionType::NonTerminal) => {
-            if game_state.descend_delay.is_out() {
-                game_state.translate_cur_tetramino(Coordinates { row: 1, col: 0 });
-                println!("Non-terminal collision");
-                game_state.descend_delay.reset();
-            }
-        }
-        None => {
-            if game_state.descend_delay.is_out() {
-                game_state.translate_cur_tetramino(Coordinates { row: 1, col: 0 });
-                game_state.descend_delay.reset();
-            }
-            println!("No collision");
-        }
+    if !collision.down && game_state.descend_delay_timer.update() {
+        game_state.translate_cur_tetramino(Coordinates::new(1, 0));
+        game_state.collision_state = CollisionState::Idle;
     }
+
+    game_state.collision_state = match game_state.collision_state {
+        CollisionState::Idle => {
+            if collision.down {
+                CollisionState::Delaying {
+                    timer: TimerMs::new(game_state.place_delay_ms),
+                }
+            } else {
+                CollisionState::Idle
+            }
+        }
+        CollisionState::Delaying { mut timer } => {
+            if timer.update() {
+                game_state.place_current_tetramino();
+                game_state.next_turn();
+                CollisionState::Reacting
+            } else {
+                CollisionState::Delaying { timer: timer }
+            }
+        }
+        CollisionState::Reacting => CollisionState::Idle,
+    };
 }
