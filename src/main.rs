@@ -1,13 +1,11 @@
-use std::{cell, collections::HashSet};
-
 use macroquad::{color::Color, prelude::*};
 use tetrs::{process_logic, GameState, InputEvent, MovingTetramino, PlacedBlocks, PlayfieldSize};
 
 fn draw_current_tetramino(cur_tetramino: &MovingTetramino, grid_painter: &SquareBitGridPainter) {
-    for block in &cur_tetramino.shape.blocks {
+    for block in &cur_tetramino.shape_with_offset() {
         grid_painter.draw_grid_cell(
-            block.coordinates.row + cur_tetramino.offset.row,
-            block.coordinates.col + cur_tetramino.offset.col,
+            block.coordinates.row,
+            block.coordinates.col,
             block.color,
         );
     }
@@ -49,7 +47,7 @@ impl SquareBitGridPainter {
             grid_size: size,
             deactivated_color: default_color,
             origin: position_origin,
-            cell_size: cell_size,
+            cell_size,
             grid_spacing: cells_spacing,
         }
     }
@@ -109,9 +107,6 @@ fn draw_game_frame(game_state: &GameState) {
 #[macroquad::main("MyGame")]
 async fn main() {
     let mut game_state = GameState::new(PlayfieldSize { rows: 20, cols: 10 });
-    let mut frame_counter = 0;
-    let mut input_buf = HashSet::<KeyCode>::new();
-    let mut time_start = std::time::Instant::now();
 
     loop {
         let inputs = InputEvent {
@@ -122,7 +117,6 @@ async fn main() {
         clear_background(BLACK);
         draw_game_frame(&game_state);
         draw_fps();
-        frame_counter += 1;
         next_frame().await;
     }
 }

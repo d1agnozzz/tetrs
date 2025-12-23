@@ -1,25 +1,19 @@
 use std::{
     collections::HashSet,
     hash::Hash,
-    ops::{Add, AddAssign, BitAnd, RemAssign, Sub, SubAssign},
+    ops::{Add, AddAssign, RemAssign, Sub},
     time::Instant,
-    u8, usize,
 };
 
 use macroquad::{
-    color::{Color, BLUE, DARKBLUE, GREEN, ORANGE, RED},
+    color::{Color, RED},
     input::KeyCode,
-    miniquad::{native::linux_x11::libx11::Time, TextureKind},
-};
-use rand::{
-    distr::{Distribution, StandardUniform},
-    Rng,
 };
 use std::time::Duration;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
-use crate::tetramino_shape::{TetraminoKind, TetraminoShape};
+use crate::tetramino_shape::{RotationDirection, TetraminoKind, TetraminoShape};
 
 mod tetramino_shape;
 #[derive(Debug)]
@@ -31,6 +25,15 @@ pub struct InputEvent {
 pub struct Block {
     pub color: Color,
     pub coordinates: Coordinates,
+}
+
+impl From<Coordinates> for Block {
+    fn from(value: Coordinates) -> Self {
+        Block {
+            color: RED,
+            coordinates: value,
+        }
+    }
 }
 
 impl PartialEq for Block {
@@ -47,47 +50,6 @@ impl Hash for Block {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct Bounds {
-    pub col_min: isize,
-    pub col_max: isize,
-    pub row_min: isize,
-    pub row_max: isize,
-}
-
-impl Bounds {
-    fn new() -> Bounds {
-        Bounds {
-            row_min: 0,
-            row_max: 0,
-            col_min: 0,
-            col_max: 0,
-        }
-    }
-    fn update(&self, (row, col): (isize, isize)) -> Bounds {
-        Bounds {
-            row_min: self.row_min.min(row),
-            row_max: self.row_max.max(row),
-            col_min: self.col_min.min(col),
-            col_max: self.col_max.max(col),
-        }
-    }
-}
-
-pub struct BoundingBox {
-    width: isize,
-    height: isize,
-}
-
-impl From<Bounds> for BoundingBox {
-    fn from(value: Bounds) -> Self {
-        BoundingBox {
-            width: value.col_max - value.col_min,
-            height: value.row_max - value.row_min,
-        }
-    }
-}
-
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Coordinates {
     pub row: isize,
@@ -95,15 +57,14 @@ pub struct Coordinates {
 }
 
 impl Coordinates {
-    fn new(row: isize, col: isize) -> Coordinates {
-        Coordinates { row: row, col: col }
-    }
-    fn clamp_inplace(&mut self, min_row: isize, max_row: isize, min_col: isize, max_col: isize) {
-        self.row = self.row.clamp(min_row, max_row);
-        self.col = self.col.clamp(min_col, max_col);
+    pub fn new(row: isize, col: isize) -> Coordinates {
+        Coordinates { row, col }
     }
     fn is_inbound(&self, rows: isize, cols: isize) -> bool {
         self.row < rows && self.row >= 0 && self.col < cols && self.col >= 0
+    }
+    pub fn swap(&mut self) {
+        std::mem::swap(&mut self.row, &mut self.col);
     }
 }
 
@@ -132,10 +93,14 @@ impl RemAssign<PlayfieldSize> for Coordinates {
     }
 }
 
-impl SubAssign<BoundingBox> for Coordinates {
-    fn sub_assign(&mut self, rhs: BoundingBox) {
-        self.col -= rhs.height;
-        self.row -= rhs.width;
+impl Sub<Coordinates> for Coordinates {
+    type Output = Coordinates;
+
+    fn sub(self, rhs: Coordinates) -> Self::Output {
+        Coordinates {
+            row: self.row - rhs.row,
+            col: self.col - rhs.col,
+        }
     }
 }
 
@@ -147,25 +112,18 @@ pub struct MovingTetramino {
 impl MovingTetramino {
     fn new(shape: TetraminoShape) -> MovingTetramino {
         MovingTetramino {
-            shape: shape,
+            shape,
             offset: Coordinates::default(),
         }
     }
 
-    fn get_blocks_with_offset(&self) -> HashSet<Block> {
+    pub fn shape_with_offset(&self) -> HashSet<Block> {
         self.shape
             .blocks
             .iter()
-            .map(|b| {
-                let offset_row = b.coordinates.row + self.offset.row;
-                let offset_col = b.coordinates.col + self.offset.col;
-                Block {
-                    color: b.color,
-                    coordinates: Coordinates {
-                        row: offset_row,
-                        col: offset_col,
-                    },
-                }
+            .map(|b| Block {
+                color: b.color,
+                coordinates: b.coordinates + self.offset,
             })
             .collect()
     }
@@ -201,26 +159,11 @@ pub struct GameState {
     pub next_tetramino: TetraminoKind,
     pub descend_delay_timer: TimerMs,
     pub place_delay_ms: usize,
-    pub collision_state: CollisionState,
+    collision_state: CollisionState,
     pub column_toggling: isize,
     pub row_toggleing: isize,
 }
 
-impl Sub<BoundingBox> for PlayfieldSize {
-    type Output = PlayfieldSize;
-
-    fn sub(self, rhs: BoundingBox) -> Self::Output {
-        PlayfieldSize {
-            rows: self.rows - rhs.height,
-            cols: self.cols - rhs.width,
-        }
-    }
-}
-
-enum CollisionType {
-    Terminal,
-    NonTerminal,
-}
 #[derive(EnumIter, Debug, PartialEq)]
 enum CollisionDirection {
     Down,
@@ -259,12 +202,6 @@ enum CollisionState {
     Reacting,
 }
 
-impl CollisionState {
-    fn new() -> Self {
-        CollisionState::Idle
-    }
-}
-
 impl GameState {
     pub fn get_playfield_top_center(playfield_size: PlayfieldSize) -> Coordinates {
         Coordinates {
@@ -277,7 +214,7 @@ impl GameState {
         first_tetramino.offset = GameState::get_playfield_top_center(playfield_size);
 
         GameState {
-            playfield_size: playfield_size,
+            playfield_size,
             placed_blocks: Default::default(),
             descend_delay_timer: TimerMs::new(200),
             place_delay_ms: 1000,
@@ -301,17 +238,16 @@ impl GameState {
         self.current_tetramino = next_tetramino;
         self.next_tetramino = rand::random();
     }
-    pub fn check_collision(&mut self) -> CollisionResult {
-        let moving_blocks = &self.current_tetramino.get_blocks_with_offset();
+    fn check_collision(&mut self) -> CollisionResult {
+        let moving_blocks = &self.current_tetramino.shape_with_offset();
         let stationary_blocks = self.placed_blocks.get_blocks();
+
         let mut collision_result = CollisionResult::new();
 
         for block in moving_blocks {
             for direction in CollisionDirection::iter() {
                 let neighbour_coords = block.coordinates + direction.offset();
-                if stationary_blocks
-                    .iter()
-                    .any(|b| b.coordinates == neighbour_coords)
+                if stationary_blocks.contains(&neighbour_coords.into())
                     || !neighbour_coords
                         .is_inbound(self.playfield_size.rows, self.playfield_size.cols)
                 {
@@ -328,24 +264,49 @@ impl GameState {
                 }
             }
         }
-        return collision_result;
+        collision_result
     }
 
     pub fn place_current_tetramino(&mut self) {
         self.placed_blocks
-            .put_blocks(&self.current_tetramino.get_blocks_with_offset());
+            .put_blocks(&self.current_tetramino.shape_with_offset());
     }
 
+    fn check_rotation_intersections(
+        &self,
+        rotated_shape: &TetraminoShape,
+        offset: Coordinates,
+    ) -> bool {
+        let rotated_with_offset = rotated_shape.with_offset(self.current_tetramino.offset + offset);
+        let stationary_blocks = self.placed_blocks.get_blocks();
+        for block in rotated_with_offset {
+            if stationary_blocks.contains(&block)
+                || !block
+                    .coordinates
+                    .is_inbound(self.playfield_size.rows, self.playfield_size.cols)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn rotate(&mut self, direction: RotationDirection) {
+        let (rotated_shape, rotation_offsets) = self
+            .current_tetramino
+            .shape
+            .get_rotated_and_offsets(direction);
+
+        for offset in rotation_offsets {
+            if !self.check_rotation_intersections(&rotated_shape, offset) {
+                self.current_tetramino.shape = rotated_shape;
+                self.current_tetramino.offset += offset;
+                break;
+            }
+        }
+    }
     pub fn translate_cur_tetramino(&mut self, offset: Coordinates) {
         self.current_tetramino.offset += offset;
-
-        let bounding_box = self.current_tetramino.shape.get_bounding_box();
-        let max_row = self.playfield_size.rows - bounding_box.height - 1;
-        let max_col = self.playfield_size.cols - bounding_box.width - 1;
-
-        self.current_tetramino
-            .offset
-            .clamp_inplace(0, max_row, 0, max_col);
     }
 }
 
@@ -359,7 +320,7 @@ impl TimerMs {
     pub fn new(wait_ms: usize) -> Self {
         Self {
             deadline: Instant::now() + Duration::from_millis(wait_ms as u64),
-            wait_ms: wait_ms,
+            wait_ms,
         }
     }
     pub fn reset(&self) -> Self {
@@ -386,6 +347,15 @@ pub fn process_logic(game_state: &mut GameState, input: InputEvent) {
     if input.keys.contains(&KeyCode::D) && !collision.right {
         game_state.translate_cur_tetramino(Coordinates { row: 0, col: 1 });
     }
+    if input.keys.contains(&KeyCode::E) {
+        game_state.rotate(RotationDirection::Clockwise);
+    }
+    if input.keys.contains(&KeyCode::Q) {
+        game_state.rotate(RotationDirection::CounterClockwise);
+    }
+    if input.keys.contains(&KeyCode::N) {
+        game_state.next_turn();
+    }
 
     if !collision.down && game_state.descend_delay_timer.update() {
         game_state.translate_cur_tetramino(Coordinates::new(1, 0));
@@ -408,7 +378,7 @@ pub fn process_logic(game_state: &mut GameState, input: InputEvent) {
                 game_state.next_turn();
                 CollisionState::Reacting
             } else {
-                CollisionState::Delaying { timer: timer }
+                CollisionState::Delaying { timer }
             }
         }
         CollisionState::Reacting => CollisionState::Idle,
