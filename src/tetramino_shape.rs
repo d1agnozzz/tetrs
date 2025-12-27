@@ -6,7 +6,7 @@ use rand::{
     Rng,
 };
 
-use crate::{Block, Coordinates};
+use crate::{Block, Position};
 
 #[derive(Clone, Copy)]
 pub enum TetraminoKind {
@@ -47,14 +47,18 @@ impl Distribution<TetraminoKind> for StandardUniform {
         }
     }
 }
-pub struct TetraminoShape {
+pub struct Tetramino {
     kind: TetraminoKind,
-    rotation_center: Coordinates,
+    rotation_center: Position,
     rotation_state: RotationState,
-    pub blocks: HashSet<Block>,
+    blocks: HashSet<Block>,
+}
+pub struct RotationResult {
+    pub tetramino: Tetramino,
+    pub kick_offsets: [Position; 5],
 }
 
-impl TetraminoShape {
+impl Tetramino {
     fn get_next_rotation_state(&self, direction: RotationDirection) -> RotationState {
         match direction {
             RotationDirection::Clockwise => match self.rotation_state {
@@ -72,7 +76,22 @@ impl TetraminoShape {
         }
     }
 
-    pub fn with_offset(&self, offset: Coordinates) -> HashSet<Block> {
+    pub fn with_offset(self, offset: Position) -> Tetramino {
+        Tetramino {
+            kind: self.kind,
+            rotation_center: self.rotation_center,
+            rotation_state: self.rotation_state,
+            blocks: self
+                .blocks
+                .iter()
+                .map(|b| Block {
+                    color: b.color,
+                    coordinates: b.coordinates + offset,
+                })
+                .collect(),
+        }
+    }
+    pub fn get_blocks_with_offset(&self, offset: Position) -> HashSet<Block> {
         self.blocks
             .iter()
             .map(|b| Block {
@@ -81,75 +100,78 @@ impl TetraminoShape {
             })
             .collect()
     }
+    pub fn get_blocks(&self) -> &HashSet<Block> {
+        &self.blocks
+    }
 
     // values from SRS implementation by TTC: https://tetris.wiki/Super_Rotation_System#How_Guideline_SRS_Really_Works
     // (x, y) from site -> (-y, x) in code # because y-axis in my implementation is flipped
-    fn get_offsets(&self, rotation_state: RotationState) -> [Coordinates; 5] {
+    fn get_offsets(&self, rotation_state: RotationState) -> [Position; 5] {
         match self.kind {
             TetraminoKind::I => match rotation_state {
                 RotationState::Init => [
-                    Coordinates::new(0, 0),
-                    Coordinates::new(0, -1),
-                    Coordinates::new(0, 2),
-                    Coordinates::new(0, -1),
-                    Coordinates::new(0, 2),
+                    Position::new(0, 0),
+                    Position::new(0, -1),
+                    Position::new(0, 2),
+                    Position::new(0, -1),
+                    Position::new(0, 2),
                 ],
                 RotationState::Right => [
-                    Coordinates::new(0, -1),
-                    Coordinates::new(0, 0),
-                    Coordinates::new(0, 0),
-                    Coordinates::new(-1, 0),
-                    Coordinates::new(2, 0),
+                    Position::new(0, -1),
+                    Position::new(0, 0),
+                    Position::new(0, 0),
+                    Position::new(-1, 0),
+                    Position::new(2, 0),
                 ],
                 RotationState::Flip => [
-                    Coordinates::new(-1, -1),
-                    Coordinates::new(-1, 1),
-                    Coordinates::new(-1, -2),
-                    Coordinates::new(0, 1),
-                    Coordinates::new(0, -2),
+                    Position::new(-1, -1),
+                    Position::new(-1, 1),
+                    Position::new(-1, -2),
+                    Position::new(0, 1),
+                    Position::new(0, -2),
                 ],
                 RotationState::Left => [
-                    Coordinates::new(-1, 0),
-                    Coordinates::new(-1, 0),
-                    Coordinates::new(-1, 0),
-                    Coordinates::new(1, 0),
-                    Coordinates::new(-2, 0),
+                    Position::new(-1, 0),
+                    Position::new(-1, 0),
+                    Position::new(-1, 0),
+                    Position::new(1, 0),
+                    Position::new(-2, 0),
                 ],
             },
             TetraminoKind::O => match rotation_state {
-                RotationState::Init => [Coordinates::new(0, 0); 5],
-                RotationState::Right => [Coordinates::new(1, 0); 5],
-                RotationState::Flip => [Coordinates::new(1, -1); 5],
-                RotationState::Left => [Coordinates::new(0, -1); 5],
+                RotationState::Init => [Position::new(0, 0); 5],
+                RotationState::Right => [Position::new(1, 0); 5],
+                RotationState::Flip => [Position::new(1, -1); 5],
+                RotationState::Left => [Position::new(0, -1); 5],
             },
             _ => match rotation_state {
                 RotationState::Init => [
-                    Coordinates::new(0, 0),
-                    Coordinates::new(0, 0),
-                    Coordinates::new(0, 0),
-                    Coordinates::new(0, 0),
-                    Coordinates::new(0, 0),
+                    Position::new(0, 0),
+                    Position::new(0, 0),
+                    Position::new(0, 0),
+                    Position::new(0, 0),
+                    Position::new(0, 0),
                 ],
                 RotationState::Right => [
-                    Coordinates::new(0, 0),
-                    Coordinates::new(0, 1),
-                    Coordinates::new(1, 1),
-                    Coordinates::new(-2, 0),
-                    Coordinates::new(-2, 1),
+                    Position::new(0, 0),
+                    Position::new(0, 1),
+                    Position::new(1, 1),
+                    Position::new(-2, 0),
+                    Position::new(-2, 1),
                 ],
                 RotationState::Flip => [
-                    Coordinates::new(0, 0),
-                    Coordinates::new(0, 0),
-                    Coordinates::new(0, 0),
-                    Coordinates::new(0, 0),
-                    Coordinates::new(0, 0),
+                    Position::new(0, 0),
+                    Position::new(0, 0),
+                    Position::new(0, 0),
+                    Position::new(0, 0),
+                    Position::new(0, 0),
                 ],
                 RotationState::Left => [
-                    Coordinates::new(0, 0),
-                    Coordinates::new(0, -1),
-                    Coordinates::new(1, -1),
-                    Coordinates::new(-2, 0),
-                    Coordinates::new(-2, -1),
+                    Position::new(0, 0),
+                    Position::new(0, -1),
+                    Position::new(1, -1),
+                    Position::new(-2, 0),
+                    Position::new(-2, -1),
                 ],
             },
         }
@@ -171,10 +193,10 @@ impl TetraminoShape {
                 color: b.color,
                 coordinates: match direction {
                     RotationDirection::Clockwise => {
-                        Coordinates::new(b.coordinates.col, -b.coordinates.row)
+                        Position::new(b.coordinates.col, -b.coordinates.row)
                     }
                     RotationDirection::CounterClockwise => {
-                        Coordinates::new(-b.coordinates.col, b.coordinates.row)
+                        Position::new(-b.coordinates.col, b.coordinates.row)
                     }
                 },
             })
@@ -188,10 +210,8 @@ impl TetraminoShape {
             .collect();
         game_coords
     }
-    pub fn get_rotated_and_offsets(
-        &self,
-        direction: RotationDirection,
-    ) -> (TetraminoShape, [Coordinates; 5]) {
+
+    pub fn get_rotated_and_offsets(&self, direction: RotationDirection) -> RotationResult {
         let rotated_shape = self.process_rotation(direction);
 
         let from_rotation = self.rotation_state;
@@ -200,133 +220,133 @@ impl TetraminoShape {
         let from_offsets = self.get_offsets(from_rotation);
         let to_offsets = self.get_offsets(to_rotation);
 
-        let mut res_offsets = [Coordinates::default(); 5];
+        let mut res_offsets = [Position::default(); 5];
         for (i, (from, to)) in from_offsets.iter().zip(to_offsets).enumerate() {
             res_offsets[i] = *from - to;
         }
 
-        (
-            TetraminoShape {
+        RotationResult {
+            tetramino: Tetramino {
                 rotation_state: to_rotation,
                 kind: self.kind,
                 blocks: rotated_shape,
                 rotation_center: self.rotation_center,
             },
-            res_offsets,
-        )
+            kick_offsets: res_offsets,
+        }
     }
-    pub fn construct(kind: TetraminoKind) -> TetraminoShape {
+    pub fn construct(kind: TetraminoKind) -> Tetramino {
         match kind {
-            TetraminoKind::I => TetraminoShape {
+            TetraminoKind::I => Tetramino {
                 blocks: {
                     [(0, 0), (0, 1), (0, 2), (0, 3)]
                         .iter()
                         .map(|(r, c)| -> Block {
                             Block {
                                 color: BLUE,
-                                coordinates: Coordinates::new(*r, *c),
+                                coordinates: Position::new(*r, *c),
                             }
                         })
                         .collect()
                 },
                 kind: TetraminoKind::I,
-                rotation_center: Coordinates::new(0, 1),
+                rotation_center: Position::new(0, 1),
                 rotation_state: Default::default(),
             },
-            TetraminoKind::L => TetraminoShape {
+            TetraminoKind::L => Tetramino {
                 blocks: {
                     [(0, 2), (1, 0), (1, 1), (1, 2)]
                         .iter()
                         .map(|(row, col)| -> Block {
                             Block {
                                 color: ORANGE,
-                                coordinates: Coordinates::new(*row, *col),
+                                coordinates: Position::new(*row, *col),
                             }
                         })
                         .collect()
                 },
                 kind: TetraminoKind::L,
-                rotation_center: Coordinates::new(1, 1),
+                rotation_center: Position::new(1, 1),
                 rotation_state: Default::default(),
             },
-            TetraminoKind::J => TetraminoShape {
+            TetraminoKind::J => Tetramino {
                 blocks: {
                     [(0, 0), (1, 0), (1, 1), (1, 2)]
                         .iter()
                         .map(|(row, col)| -> Block {
                             Block {
                                 color: DARKBLUE,
-                                coordinates: Coordinates::new(*row, *col),
+                                coordinates: Position::new(*row, *col),
                             }
                         })
                         .collect()
                 },
                 kind: TetraminoKind::J,
-                rotation_center: Coordinates::new(1, 1),
+                rotation_center: Position::new(1, 1),
                 rotation_state: Default::default(),
             },
-            TetraminoKind::S => TetraminoShape {
+            TetraminoKind::S => Tetramino {
                 blocks: {
                     [(0, 2), (0, 1), (1, 1), (1, 0)]
                         .iter()
                         .map(|(row, col)| -> Block {
                             Block {
                                 color: GREEN,
-                                coordinates: Coordinates::new(*row, *col),
+                                coordinates: Position::new(*row, *col),
                             }
                         })
                         .collect()
                 },
                 kind: TetraminoKind::S,
-                rotation_center: Coordinates::new(1, 1),
+                rotation_center: Position::new(1, 1),
                 rotation_state: Default::default(),
             },
-            TetraminoKind::Z => TetraminoShape {
+            TetraminoKind::Z => Tetramino {
                 blocks: {
                     [(0, 0), (0, 1), (1, 1), (1, 2)]
                         .iter()
                         .map(|(row, col)| -> Block {
                             Block {
                                 color: RED,
-                                coordinates: Coordinates::new(*row, *col),
+                                coordinates: Position::new(*row, *col),
                             }
                         })
                         .collect()
                 },
                 kind: TetraminoKind::Z,
-                rotation_center: Coordinates::new(1, 1),
+                rotation_center: Position::new(1, 1),
                 rotation_state: Default::default(),
             },
-            TetraminoKind::O => TetraminoShape {
+            TetraminoKind::O => Tetramino {
                 blocks: {
                     [(0, 0), (0, 1), (1, 0), (1, 1)]
                         .iter()
                         .map(|(row, col)| -> Block {
                             Block {
                                 color: YELLOW,
-                                coordinates: Coordinates::new(*row, *col),
+                                coordinates: Position::new(*row, *col),
                             }
                         })
                         .collect()
                 },
                 kind: TetraminoKind::O,
-                rotation_center: Coordinates::new(1, 0),
+                rotation_center: Position::new(1, 0),
                 rotation_state: Default::default(),
             },
-            TetraminoKind::T => TetraminoShape {
+            TetraminoKind::T => Tetramino {
                 blocks: {
                     [(1, 0), (1, 1), (1, 2), (0, 1)]
                         .iter()
                         .map(|(row, col)| -> Block {
                             Block {
                                 color: PURPLE,
-                                coordinates: Coordinates::new(*row, *col),
+                                coordinates: Position::new(*row, *col),
                             }
                         })
                         .collect()
                 },
                 kind: TetraminoKind::T,
-                rotation_center: Coordinates::new(1, 1),
+                rotation_center: Position::new(1, 1),
                 rotation_state: Default::default(),
             },
         }

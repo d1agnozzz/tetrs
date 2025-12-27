@@ -1,8 +1,8 @@
 use macroquad::{color::Color, prelude::*};
-use tetrs::{process_logic, GameState, InputEvent, MovingTetramino, PlacedBlocks, PlayfieldSize};
+use tetrs::{process_logic, GameState, InputEvent, ActiveTetramino, PlacedBlocks, PlayfieldSize};
 
-fn draw_current_tetramino(cur_tetramino: &MovingTetramino, grid_painter: &SquareBitGridPainter) {
-    for block in &cur_tetramino.shape_with_offset() {
+fn draw_current_tetramino(cur_tetramino: &ActiveTetramino, grid_painter: &SquareBitGridPainter) {
+    for block in &cur_tetramino.get_blocks_with_offset() {
         grid_painter.draw_grid_cell(
             block.coordinates.row,
             block.coordinates.col,
@@ -17,7 +17,7 @@ fn draw_placed_blocks(placed: &PlacedBlocks, grid_painter: &SquareBitGridPainter
     }
 }
 
-struct Coordinate {
+struct UIPosition {
     x: f32,
     y: f32,
 }
@@ -30,7 +30,7 @@ struct GridSize {
 struct SquareBitGridPainter {
     grid_size: GridSize,
     deactivated_color: Color,
-    origin: Coordinate,
+    origin: UIPosition,
     cell_size: f32,
     grid_spacing: f32,
 }
@@ -39,7 +39,7 @@ impl SquareBitGridPainter {
     fn new(
         size: GridSize,
         default_color: Color,
-        position_origin: Coordinate,
+        position_origin: UIPosition,
         cell_size: f32,
         cells_spacing: f32,
     ) -> Self {
@@ -52,8 +52,8 @@ impl SquareBitGridPainter {
         }
     }
 
-    pub fn cell_origin(&self, row: isize, col: isize) -> Coordinate {
-        Coordinate {
+    pub fn cell_origin(&self, row: isize, col: isize) -> UIPosition {
+        UIPosition {
             x: col as f32 * self.cell_size + col as f32 * self.grid_spacing + self.origin.x,
             y: row as f32 * self.cell_size + row as f32 * self.grid_spacing + self.origin.y,
         }
@@ -74,7 +74,7 @@ impl SquareBitGridPainter {
     }
 
     pub fn draw_grid_cell(&self, row: isize, col: isize, color: Color) {
-        let cell_origin = Coordinate {
+        let cell_origin = UIPosition {
             x: col as f32 * self.cell_size + col as f32 * self.grid_spacing + self.origin.x,
             y: row as f32 * self.cell_size + row as f32 * self.grid_spacing + self.origin.y,
         };
@@ -95,7 +95,7 @@ fn draw_game_frame(game_state: &GameState) {
             cols: game_state.playfield_size.cols,
         },
         GRAY,
-        Coordinate { x: 50., y: 50. },
+        UIPosition { x: 50., y: 50. },
         10.0,
         5.0,
     );

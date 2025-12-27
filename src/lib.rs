@@ -13,7 +13,7 @@ use std::time::Duration;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
-use crate::tetramino_shape::{RotationDirection, TetraminoKind, TetraminoShape};
+use crate::tetramino_shape::{RotationDirection, RotationResult, Tetramino, TetraminoKind};
 
 mod tetramino_shape;
 #[derive(Debug)]
@@ -24,11 +24,11 @@ pub struct InputEvent {
 #[derive(Clone, Copy, Debug)]
 pub struct Block {
     pub color: Color,
-    pub coordinates: Coordinates,
+    pub coordinates: Position,
 }
 
-impl From<Coordinates> for Block {
-    fn from(value: Coordinates) -> Self {
+impl From<Position> for Block {
+    fn from(value: Position) -> Self {
         Block {
             color: RED,
             coordinates: value,
@@ -51,14 +51,14 @@ impl Hash for Block {
 }
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Coordinates {
+pub struct Position {
     pub row: isize,
     pub col: isize,
 }
 
-impl Coordinates {
-    pub fn new(row: isize, col: isize) -> Coordinates {
-        Coordinates { row, col }
+impl Position {
+    pub fn new(row: isize, col: isize) -> Position {
+        Position { row, col }
     }
     fn is_inbound(&self, rows: isize, cols: isize) -> bool {
         self.row < rows && self.row >= 0 && self.col < cols && self.col >= 0
@@ -68,64 +68,134 @@ impl Coordinates {
     }
 }
 
-impl Add<Coordinates> for Coordinates {
-    type Output = Coordinates;
+impl Add<Position> for Position {
+    type Output = Position;
 
-    fn add(self, rhs: Coordinates) -> Self::Output {
-        Coordinates {
+    fn add(self, rhs: Position) -> Self::Output {
+        Position {
             row: self.row + rhs.row,
             col: self.col + rhs.col,
         }
     }
 }
 
-impl AddAssign for Coordinates {
+impl AddAssign for Position {
     fn add_assign(&mut self, rhs: Self) {
         self.col += rhs.col;
         self.row += rhs.row;
     }
 }
 
-impl RemAssign<PlayfieldSize> for Coordinates {
+impl RemAssign<PlayfieldSize> for Position {
     fn rem_assign(&mut self, rhs: PlayfieldSize) {
         self.col %= rhs.cols;
         self.row %= rhs.rows;
     }
 }
 
-impl Sub<Coordinates> for Coordinates {
-    type Output = Coordinates;
+impl Sub<Position> for Position {
+    type Output = Position;
 
-    fn sub(self, rhs: Coordinates) -> Self::Output {
-        Coordinates {
+    fn sub(self, rhs: Position) -> Self::Output {
+        Position {
             row: self.row - rhs.row,
             col: self.col - rhs.col,
         }
     }
 }
 
-pub struct MovingTetramino {
-    pub shape: TetraminoShape,
-    pub offset: Coordinates,
+pub struct ActiveTetramino {
+    shape: Tetramino,
+    offset: Position,
 }
 
-impl MovingTetramino {
-    fn new(shape: TetraminoShape) -> MovingTetramino {
-        MovingTetramino {
+impl ActiveTetramino {
+    fn new(shape: Tetramino) -> ActiveTetramino {
+        ActiveTetramino {
             shape,
-            offset: Coordinates::default(),
+            offset: Position::default(),
         }
     }
 
-    pub fn shape_with_offset(&self) -> HashSet<Block> {
+    fn with_offset(self, offset: Position) -> ActiveTetramino {
+        Self {
+            shape: self.shape,
+            offset,
+        }
+    }
+
+    fn translate_with_offset(&mut self, offset: Position) {
+        self.offset += offset;
+    }
+
+    fn get_rotation_result(&self, direction: RotationDirection) -> RotationResult {
+        self.shape.get_rotated_and_offsets(direction)
+    }
+
+    pub fn get_blocks_with_offset(&self) -> HashSet<Block> {
         self.shape
-            .blocks
+            .get_blocks()
             .iter()
             .map(|b| Block {
                 color: b.color,
                 coordinates: b.coordinates + self.offset,
             })
             .collect()
+    }
+}
+
+struct Playfield {
+    size: PlayfieldSize,
+    placed_blocks: PlacedBlocks,
+}
+
+impl Playfield {
+    pub fn new(size: PlayfieldSize) -> Playfield {
+        Playfield {
+            size,
+            placed_blocks: PlacedBlocks::default(),
+        }
+    }
+    pub fn put_blocks(&mut self, blocks: &HashSet<Block>) {
+        self.placed_blocks.put_blocks(blocks);
+    }
+    fn check_intersections(&self, blocks: &HashSet<Block>) -> bool {
+        let stationary_blocks = self.placed_blocks.get_blocks();
+        for block in blocks {
+            if stationary_blocks.contains(&block)
+                || !block.coordinates.is_inbound(self.size.rows, self.size.cols)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn check_collisions(&self, subject: &HashSet<Block>) -> CollisionResult {
+        let stationary_blocks = self.placed_blocks.get_blocks();
+
+        let mut collision_result = CollisionResult::new();
+
+        for block in subject {
+            for direction in CollisionDirection::iter() {
+                let neighbour_coords = block.coordinates + direction.offset();
+                if stationary_blocks.contains(&neighbour_coords.into())
+                    || !neighbour_coords.is_inbound(self.size.rows, self.size.cols)
+                {
+                    match direction {
+                        CollisionDirection::Down => collision_result.down = true,
+                        CollisionDirection::Left => collision_result.left = true,
+                        CollisionDirection::Right => collision_result.right = true,
+                    }
+                    dbg!(subject);
+                    dbg!(stationary_blocks);
+                    dbg!(block);
+                    dbg!(direction);
+                    dbg!(neighbour_coords);
+                }
+            }
+        }
+        collision_result
     }
 }
 
@@ -153,15 +223,18 @@ impl PlacedBlocks {
 }
 
 pub struct GameState {
-    pub playfield_size: PlayfieldSize,
-    pub placed_blocks: PlacedBlocks,
-    pub current_tetramino: MovingTetramino,
-    pub next_tetramino: TetraminoKind,
+    // merge into Playfield
+    playfield: Playfield,
+    // merge into TetraminoManager?
+    // pub current_tetramino: ActiveTetramino,
+    // pub next_tetramino: TetraminoKind,
+    tetramino_manager: TetraminoManager,
+    // merge into TimerManager
     pub descend_delay_timer: TimerMs,
     pub place_delay_ms: usize,
+
+    // move to TetraminoManager
     collision_state: CollisionState,
-    pub column_toggling: isize,
-    pub row_toggleing: isize,
 }
 
 #[derive(EnumIter, Debug, PartialEq)]
@@ -172,11 +245,11 @@ enum CollisionDirection {
 }
 
 impl CollisionDirection {
-    pub fn offset(&self) -> Coordinates {
+    pub fn offset(&self) -> Position {
         match self {
-            CollisionDirection::Down => Coordinates::new(1, 0),
-            CollisionDirection::Left => Coordinates::new(0, -1),
-            CollisionDirection::Right => Coordinates::new(0, 1),
+            CollisionDirection::Down => Position::new(1, 0),
+            CollisionDirection::Left => Position::new(0, -1),
+            CollisionDirection::Right => Position::new(0, 1),
         }
     }
 }
@@ -198,116 +271,119 @@ impl CollisionResult {
 }
 enum CollisionState {
     Idle,
-    Delaying { timer: TimerMs },
-    Reacting,
+    Delaying,
 }
 
-impl GameState {
-    pub fn get_playfield_top_center(playfield_size: PlayfieldSize) -> Coordinates {
-        Coordinates {
-            col: playfield_size.cols / 2,
-            row: 0,
-        }
-    }
-    pub fn new(playfield_size: PlayfieldSize) -> GameState {
-        let mut first_tetramino = MovingTetramino::new(TetraminoShape::construct(rand::random()));
-        first_tetramino.offset = GameState::get_playfield_top_center(playfield_size);
+struct PlacementDelayManager {
+    collision_state: CollisionState,
+    delay_ms: usize,
+    timer: TimerMs,
+}
 
-        GameState {
-            playfield_size,
-            placed_blocks: Default::default(),
-            descend_delay_timer: TimerMs::new(200),
-            place_delay_ms: 1000,
+impl PlacementDelayManager {
+    fn new(delay_ms: usize) -> PlacementDelayManager {
+        PlacementDelayManager {
             collision_state: CollisionState::Idle,
-            current_tetramino: first_tetramino,
-            next_tetramino: rand::random(),
-            column_toggling: 5,
-            row_toggleing: 0,
+            delay_ms,
+            timer: TimerMs::new(0),
         }
     }
-    pub fn reset_tetramino_offset(&mut self) {
-        self.current_tetramino.offset = Coordinates {
-            col: self.playfield_size.cols / 2,
-            row: self.playfield_size.rows / 2,
-        }
-    }
-    pub fn next_turn(&mut self) {
-        let mut next_tetramino =
-            MovingTetramino::new(TetraminoShape::construct(self.next_tetramino));
-        next_tetramino.offset = GameState::get_playfield_top_center(self.playfield_size);
-        self.current_tetramino = next_tetramino;
-        self.next_tetramino = rand::random();
-    }
-    fn check_collision(&mut self) -> CollisionResult {
-        let moving_blocks = &self.current_tetramino.shape_with_offset();
-        let stationary_blocks = self.placed_blocks.get_blocks();
-
-        let mut collision_result = CollisionResult::new();
-
-        for block in moving_blocks {
-            for direction in CollisionDirection::iter() {
-                let neighbour_coords = block.coordinates + direction.offset();
-                if stationary_blocks.contains(&neighbour_coords.into())
-                    || !neighbour_coords
-                        .is_inbound(self.playfield_size.rows, self.playfield_size.cols)
-                {
-                    match direction {
-                        CollisionDirection::Down => collision_result.down = true,
-                        CollisionDirection::Left => collision_result.left = true,
-                        CollisionDirection::Right => collision_result.right = true,
-                    }
-                    dbg!(moving_blocks);
-                    dbg!(stationary_blocks);
-                    dbg!(block);
-                    dbg!(direction);
-                    dbg!(neighbour_coords);
+    fn delay_passed(&mut self, is_colliding: bool) -> bool {
+        match self.collision_state {
+            CollisionState::Idle => {
+                if is_colliding {
+                    self.collision_state = CollisionState::Delaying;
+                    self.timer = TimerMs::new(self.delay_ms);
+                }
+                false
+            }
+            CollisionState::Delaying => {
+                if self.timer.update() {
+                    self.collision_state = CollisionState::Idle;
+                    true
+                } else {
+                    false
                 }
             }
         }
-        collision_result
     }
+}
 
-    pub fn place_current_tetramino(&mut self) {
-        self.placed_blocks
-            .put_blocks(&self.current_tetramino.shape_with_offset());
-    }
+struct TetraminoManager {
+    active: ActiveTetramino,
+    gravity_delay: TimerMs,
+    placement_delay: PlacementDelayManager,
+    next: TetraminoKind,
+    hold: Option<Tetramino>,
+}
 
-    fn check_rotation_intersections(
-        &self,
-        rotated_shape: &TetraminoShape,
-        offset: Coordinates,
-    ) -> bool {
-        let rotated_with_offset = rotated_shape.with_offset(self.current_tetramino.offset + offset);
-        let stationary_blocks = self.placed_blocks.get_blocks();
-        for block in rotated_with_offset {
-            if stationary_blocks.contains(&block)
-                || !block
-                    .coordinates
-                    .is_inbound(self.playfield_size.rows, self.playfield_size.cols)
-            {
-                return true;
-            }
+impl TetraminoManager {
+    pub fn new(gravity_delay_ms: usize, placement_delay_ms: usize) -> TetraminoManager {
+        TetraminoManager {
+            active: ActiveTetramino::new(Tetramino::construct(rand::random())),
+            gravity_delay: TimerMs::new(gravity_delay_ms),
+            placement_delay: PlacementDelayManager::new(placement_delay_ms),
+            next: rand::random(),
+            hold: None,
         }
-        false
+    }
+    pub fn propogate_gravity(&mut self) {
+        self.active
+            .translate_with_offset(Position { row: 1, col: 0 });
+    }
+    pub fn with_offset(self, offset: Position) -> TetraminoManager {
+        TetraminoManager {
+            active: self.active.with_offset(offset),
+            gravity_delay: self.gravity_delay,
+            placement_delay: self.placement_delay,
+            next: self.next,
+            hold: self.hold,
+        }
+    }
+    pub fn next_tetramino(&mut self) {
+        self.active = ActiveTetramino::new(Tetramino::construct(self.next));
+        self.next = rand::random();
+    }
+    pub fn rotate(&self, direction: RotationDirection) -> RotationResult {
+        self.active.get_rotation_result(direction)
+    }
+}
+
+impl GameState {
+    pub fn new(
+        playfield_size: PlayfieldSize,
+        gravity_delay_ms: usize,
+        placement_delay_ms: usize,
+    ) -> GameState {
+        GameState {
+            playfield: Playfield::new(playfield_size),
+            descend_delay_timer: TimerMs::new(200),
+            place_delay_ms: 1000,
+            collision_state: CollisionState::Idle,
+            tetramino_manager: TetraminoManager::new(gravity_delay_ms, placement_delay_ms)
+                .with_offset(Position::new(
+                    playfield_size.rows / 2,
+                    playfield_size.cols / 2,
+                )),
+        }
     }
 
-    pub fn rotate(&mut self, direction: RotationDirection) {
-        let (rotated_shape, rotation_offsets) = self
-            .current_tetramino
-            .shape
-            .get_rotated_and_offsets(direction);
+    pub fn try_rotate(&mut self, direction: RotationDirection) {
+        let rotation_result = self.tetramino_manager.rotate(direction);
 
-        for offset in rotation_offsets {
-            if !self.check_rotation_intersections(&rotated_shape, offset) {
-                self.current_tetramino.shape = rotated_shape;
-                self.current_tetramino.offset += offset;
+        for kick_offset in rotation_result.kick_offsets {
+            if !self.playfield.check_intersections(
+                &rotation_result
+                    .tetramino
+                    .get_blocks_with_offset(self.tetramino_manager.active.offset + kick_offset),
+            ) {
+                self.tetramino_manager.active.shape = rotation_result.tetramino;
+                self.tetramino_manager.active.offset += kick_offset;
                 break;
             }
         }
     }
-    pub fn translate_cur_tetramino(&mut self, offset: Coordinates) {
-        self.current_tetramino.offset += offset;
-    }
+    pub fn update(&mut self) {}
 }
 
 #[derive(Clone, Copy)]
@@ -342,23 +418,23 @@ impl TimerMs {
 pub fn process_logic(game_state: &mut GameState, input: InputEvent) {
     let collision = game_state.check_collision();
     if input.keys.contains(&KeyCode::A) && !collision.left {
-        game_state.translate_cur_tetramino(Coordinates { row: 0, col: -1 });
+        game_state.translate_cur_tetramino(Position { row: 0, col: -1 });
     }
     if input.keys.contains(&KeyCode::D) && !collision.right {
-        game_state.translate_cur_tetramino(Coordinates { row: 0, col: 1 });
+        game_state.translate_cur_tetramino(Position { row: 0, col: 1 });
     }
     if input.keys.contains(&KeyCode::E) {
-        game_state.rotate(RotationDirection::Clockwise);
+        game_state.try_rotate(RotationDirection::Clockwise);
     }
     if input.keys.contains(&KeyCode::Q) {
-        game_state.rotate(RotationDirection::CounterClockwise);
+        game_state.try_rotate(RotationDirection::CounterClockwise);
     }
     if input.keys.contains(&KeyCode::N) {
         game_state.next_turn();
     }
 
     if !collision.down && game_state.descend_delay_timer.update() {
-        game_state.translate_cur_tetramino(Coordinates::new(1, 0));
+        game_state.translate_cur_tetramino(Position::new(1, 0));
         game_state.collision_state = CollisionState::Idle;
     }
 
@@ -376,11 +452,11 @@ pub fn process_logic(game_state: &mut GameState, input: InputEvent) {
             if timer.update() {
                 game_state.place_current_tetramino();
                 game_state.next_turn();
-                CollisionState::Reacting
+                CollisionState::Done
             } else {
                 CollisionState::Delaying { timer }
             }
         }
-        CollisionState::Reacting => CollisionState::Idle,
+        CollisionState::Done => CollisionState::Idle,
     };
 }
