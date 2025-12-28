@@ -1,21 +1,8 @@
+use std::collections::HashSet;
+
 use macroquad::{color::Color, prelude::*};
-use tetrs::{process_logic, GameState, InputEvent, ActiveTetramino, PlacedBlocks, PlayfieldSize};
+use tetrs::{Block, GameState, PlayerIntention, PlayfieldSize};
 
-fn draw_current_tetramino(cur_tetramino: &ActiveTetramino, grid_painter: &SquareBitGridPainter) {
-    for block in &cur_tetramino.get_blocks_with_offset() {
-        grid_painter.draw_grid_cell(
-            block.coordinates.row,
-            block.coordinates.col,
-            block.color,
-        );
-    }
-}
-
-fn draw_placed_blocks(placed: &PlacedBlocks, grid_painter: &SquareBitGridPainter) {
-    for block in placed.get_blocks() {
-        grid_painter.draw_grid_cell(block.coordinates.row, block.coordinates.col, block.color);
-    }
-}
 
 struct UIPosition {
     x: f32,
@@ -73,7 +60,7 @@ impl SquareBitGridPainter {
         }
     }
 
-    pub fn draw_grid_cell(&self, row: isize, col: isize, color: Color) {
+    fn draw_grid_cell(&self, row: isize, col: isize, color: Color) {
         let cell_origin = UIPosition {
             x: col as f32 * self.cell_size + col as f32 * self.grid_spacing + self.origin.x,
             y: row as f32 * self.cell_size + row as f32 * self.grid_spacing + self.origin.y,
@@ -86,36 +73,79 @@ impl SquareBitGridPainter {
             color,
         );
     }
+    pub fn draw_blocks(&self, blocks: &HashSet<Block>, override_color: Option<Color>) {
+        for block in blocks {
+            self.draw_grid_cell(block.coordinates.row, block.coordinates.col, override_color.unwrap_or(block.color.into()));
+        }
+    }
 }
 
-fn draw_game_frame(game_state: &GameState) {
-    let game_grid_painter = SquareBitGridPainter::new(
+fn draw_game_frame(game_state: &GameState, bg_color: Color, cell_size: f32, cells_spacing: f32) {
+    let playfield_painter = SquareBitGridPainter::new(
         GridSize {
-            rows: game_state.playfield_size.rows,
-            cols: game_state.playfield_size.cols,
+            rows: game_state.get_playfield_size().rows,
+            cols: game_state.get_playfield_size().cols,
         },
-        GRAY,
-        UIPosition { x: 50., y: 50. },
-        10.0,
-        5.0,
+        bg_color,
+        UIPosition { x: 100., y: 50. },
+        cell_size,
+        cells_spacing,
     );
-    game_grid_painter.draw_empty_grid();
-    draw_placed_blocks(&game_state.placed_blocks, &game_grid_painter);
-    draw_current_tetramino(&game_state.current_tetramino, &game_grid_painter);
+    playfield_painter.draw_empty_grid();
+    playfield_painter.draw_blocks(game_state.get_placed_blocks().get_blocks(), None);
+    playfield_painter.draw_blocks(&game_state.get_hard_drop_blocks(), Some(GRAY));
+    playfield_painter.draw_blocks(&game_state.get_active_tetramino().get_blocks_with_offset(None), None);
+
+    draw_text("next", 300. , 40. , 30. , WHITE);
+    let next_painter = SquareBitGridPainter::new(
+        GridSize { rows: 4, cols: 4 },
+        BLACK,
+        UIPosition { x: 300., y: 50. },
+        cell_size,
+        cells_spacing,
+    );
+    next_painter.draw_empty_grid();
+    next_painter.draw_blocks(game_state.get_next_blocks(), None);
+
+    draw_text("hold", 20. , 40. , 30. , WHITE);
+    let hold_painter = SquareBitGridPainter::new(
+        GridSize { rows: 4, cols: 4 },
+        BLACK,
+        UIPosition { x: 20., y: 50. },
+        cell_size,
+        cells_spacing,
+    );
+    hold_painter.draw_empty_grid();
+    if let Some(b) = &game_state.get_hold_blocks() { hold_painter.draw_blocks(b, None) }
 }
 
 #[macroquad::main("MyGame")]
 async fn main() {
-    let mut game_state = GameState::new(PlayfieldSize { rows: 20, cols: 10 });
+    let mut game_state = GameState::new(PlayfieldSize::new(20, 10), 500, 1000);
 
     loop {
-        let inputs = InputEvent {
-            keys: get_keys_pressed(),
-        };
+        let input_keys = get_keys_pressed();
+        let mut player_intent = PlayerIntention::None;
 
-        process_logic(&mut game_state, inputs);
+        if input_keys.contains(&KeyCode::A) {
+            player_intent = PlayerIntention::MoveLeft;
+        } else if input_keys.contains(&KeyCode::D) {
+            player_intent = PlayerIntention::MoveRight;
+        } else if input_keys.contains(&KeyCode::E) {
+            player_intent = PlayerIntention::RotateClockwise;
+        } else if input_keys.contains(&KeyCode::Q) {
+            player_intent = PlayerIntention::RotateCounterClockwise;
+        } else if input_keys.contains(&KeyCode::S) {
+            player_intent = PlayerIntention::DropSoft;
+        } else if input_keys.contains(&KeyCode::Space) {
+            player_intent = PlayerIntention::DropHard;
+        } else if input_keys.contains(&KeyCode::LeftShift) {
+            player_intent = PlayerIntention::HoldPiece;
+        }
+
+        game_state.update(player_intent);
         clear_background(BLACK);
-        draw_game_frame(&game_state);
+        draw_game_frame(&game_state, DARKGRAY, 15.0, 1.0);
         draw_fps();
         next_frame().await;
     }
